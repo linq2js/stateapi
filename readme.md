@@ -1,6 +1,6 @@
 # stateapi
 
-A state management based for React. It is lightweight but powerful
+A state management for React. It is lightweight but powerful
 
 ## Features
 

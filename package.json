@@ -1,7 +1,7 @@
 {
   "name": "stateapi",
-  "version": "1.0.5",
-  "description": "A state management based for React. It is lightweight but powerful",
+  "version": "1.0.6",
+  "description": "A state management for React. It is lightweight but powerful",
   "main": "./dist/index.js",
   "scripts": {
     "test": "jest"
