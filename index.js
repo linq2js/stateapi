@@ -11,7 +11,7 @@ function isComponent(component) {
   );
 }
 
-function shallowEqual(value1, value2) {
+function shallowEqual(value1, value2, ignoreFuncs) {
   if (value1 === value2) return true;
   if (value1 instanceof Date && value2 instanceof Date) {
     return value1.getTime() === value2.getTime();
@@ -21,14 +21,30 @@ function shallowEqual(value1, value2) {
       const length = value1.length;
       if (length !== value2.length) return false;
       for (let i = 0; i < length; i++) {
-        if (value1[i] !== value2[i]) return false;
+        const value1Prop = value1[i];
+        const value2Prop = value2[i];
+        if (
+          ignoreFuncs &&
+          typeof value1Prop === 'function' &&
+          typeof value2Prop === 'function'
+        )
+          continue;
+        if (value1Prop !== value2Prop) return false;
       }
       return true;
     }
     const value1Keys = Object.keys(value1);
     if (value1Keys.length !== Object.keys(value2).length) return false;
     for (let key of value1Keys) {
-      if (value1[key] !== value2[key]) return false;
+      const value1Prop = value1[key];
+      const value2Prop = value2[key];
+      if (
+        ignoreFuncs &&
+        typeof value1Prop === 'function' &&
+        typeof value2Prop === 'function'
+      )
+        continue;
+      if (value1Prop !== value2Prop) return false;
     }
     return true;
   }
@@ -66,7 +82,7 @@ export default function(initialState = {}, options = {}) {
 
     shouldComponentUpdate(nextProps) {
       const nextMappedProps = this.mapProps(nextProps.ownedProps);
-      if (shallowEqual(nextMappedProps, this.mappedProps)) {
+      if (shallowEqual(nextMappedProps, this.mappedProps, true)) {
         return false;
       }
       this.mappedProps = nextMappedProps;

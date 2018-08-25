@@ -52,7 +52,7 @@ exports.default = function () {
       key: 'shouldComponentUpdate',
       value: function shouldComponentUpdate(nextProps) {
         var nextMappedProps = this.mapProps(nextProps.ownedProps);
-        if (shallowEqual(nextMappedProps, this.mappedProps)) {
+        if (shallowEqual(nextMappedProps, this.mappedProps, true)) {
           return false;
         }
         this.mappedProps = nextMappedProps;
@@ -278,7 +278,7 @@ function isComponent(component) {
   return typeof component === 'function' && (component.prototype instanceof _react.Component || component.prototype instanceof _react.PureComponent);
 }
 
-function shallowEqual(value1, value2) {
+function shallowEqual(value1, value2, ignoreFuncs) {
   if (value1 === value2) return true;
   if (value1 instanceof Date && value2 instanceof Date) {
     return value1.getTime() === value2.getTime();
@@ -288,7 +288,10 @@ function shallowEqual(value1, value2) {
       var length = value1.length;
       if (length !== value2.length) return false;
       for (var i = 0; i < length; i++) {
-        if (value1[i] !== value2[i]) return false;
+        var value1Prop = value1[i];
+        var value2Prop = value2[i];
+        if (ignoreFuncs && typeof value1Prop === 'function' && typeof value2Prop === 'function') continue;
+        if (value1Prop !== value2Prop) return false;
       }
       return true;
     }
@@ -302,7 +305,10 @@ function shallowEqual(value1, value2) {
       for (var _iterator = value1Keys[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
         var key = _step.value;
 
-        if (value1[key] !== value2[key]) return false;
+        var _value1Prop = value1[key];
+        var _value2Prop = value2[key];
+        if (ignoreFuncs && typeof _value1Prop === 'function' && typeof _value2Prop === 'function') continue;
+        if (_value1Prop !== _value2Prop) return false;
       }
     } catch (err) {
       _didIteratorError = true;
