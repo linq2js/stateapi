@@ -1,0 +1,46 @@
+{
+  "name": "stateapi",
+  "version": "1.0.2",
+  "description": "A state management based on new React context API. It is lightweight but powerful",
+  "main": "./dist/index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linq2js/stateapi.git"
+  },
+  "keywords": [
+    "functional",
+    "functional programming",
+    "flux",
+    "react",
+    "es6",
+    "state",
+    "state management",
+    "redux",
+    "store",
+    "context api"
+  ],
+  "author": "linq2js",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/linq2js/stateapi/issues"
+  },
+  "homepage": "https://github.com/linq2js/stateapi#readme",
+  "dependencies": {
+    "react": "^16.4.2"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-core": "^6.26.3",
+    "babel-jest": "^23.0.1",
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-preset-env": "^1.7.0",
+    "jest": "^23.1.0",
+    "node-fetch": "^2.2.0"
+  },
+  "jest": {
+    "transformIgnorePatterns": []
+  }
+}
