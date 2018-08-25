@@ -144,7 +144,8 @@ exports.default = function () {
 
   function notifyChange(target) {
     for (var i = 0, length = handlers.length; i < length; i++) {
-      handlers[i](state);
+      var handler = handlers[i];
+      handler && handler(state);
     }
   }
 

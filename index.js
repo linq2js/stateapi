@@ -156,7 +156,8 @@ export default function(initialState = {}, options = {}) {
 
   function notifyChange(target) {
     for (let i = 0, length = handlers.length; i < length; i++) {
-      handlers[i](state);
+      const handler = handlers[i];
+      handler && handler(state);
     }
   }
 
