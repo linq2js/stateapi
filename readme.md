@@ -1,11 +1,10 @@
 # stateapi
 
-A state management based on new React context API. It is lightweight but powerful. Depend on React only
+A state management based for React. It is lightweight but powerful
 
 ## Features
 
 1.  Lightweight
-1.  Using new React Context API
 1.  Simple API
 1.  Support middleware
 1.  Support multiple state updating modes

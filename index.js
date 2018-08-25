@@ -1,4 +1,7 @@
-import { Component, PureComponent, createContext, createElement } from 'react';
+import { Component, PureComponent, createElement } from 'react';
+
+const isDevMode =
+  !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
 
 function isComponent(component) {
   return (
@@ -8,34 +11,77 @@ function isComponent(component) {
   );
 }
 
+function shallowEqual(value1, value2) {
+  if (value1 === value2) return true;
+  if (value1 instanceof Date && value2 instanceof Date) {
+    return value1.getTime() === value2.getTime();
+  }
+  if (value1 && value2) {
+    if (Array.isArray(value1)) {
+      const length = value1.length;
+      if (length !== value2.length) return false;
+      for (let i = 0; i < length; i++) {
+        if (value1[i] !== value2[i]) return false;
+      }
+      return true;
+    }
+    const value1Keys = Object.keys(value1);
+    if (value1Keys.length !== Object.keys(value2).length) return false;
+    for (let key of value1Keys) {
+      if (value1[key] !== value2[key]) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 export default function(initialState = {}, options = {}) {
   let state = initialState;
   const { mode = 'merge' } = options;
-  const context = createContext();
   const handlers = [];
   const middlewares = [];
 
-  class Provider extends Component {
-    componentDidMount() {
-      this.off = on(() => this.forceUpdate());
+  class Wrapper extends Component {
+    constructor(props) {
+      super(props);
+
+      this.off = on(() => {
+        try {
+          if (!this.shouldComponentUpdate(this.props)) return;
+        } catch (ex) {
+          if (isDevMode) {
+            console.warn(ex);
+          }
+          return;
+        }
+        this.forceUpdate();
+      });
+
+      this.shouldComponentUpdate(this.props);
+    }
+
+    mapProps(props) {
+      return this.props.stateToProps(state, props);
+    }
+
+    shouldComponentUpdate(nextProps) {
+      const nextMappedProps = this.mapProps(nextProps.ownedProps);
+      if (shallowEqual(nextMappedProps, this.mappedProps)) {
+        return false;
+      }
+      this.mappedProps = nextMappedProps;
+      return true;
     }
 
     componentWillUnmount() {
+      this.unmount = true;
       this.off();
     }
 
     render() {
-      return createElement(
-        context.Provider,
-        { value: state },
-        this.props.children(state)
-      );
-    }
-  }
-
-  class Consumer extends PureComponent {
-    render() {
-      if (this.lastProps === this.props) {
+      const props = this.mappedProps;
+      const component = this.props.component;
+      if (this.lastProps === props) {
         // is async component
         if (this.promise) {
           return this.promiseResult;
@@ -44,11 +90,8 @@ export default function(initialState = {}, options = {}) {
         // props has been changed
       }
 
-      this.lastProps = this.props;
-      const component = this.props.__component;
+      this.lastProps = props;
       const isClass = isComponent(component);
-      const props = Object.assign({}, this.props);
-      delete props.__component;
       if (isClass) {
         return createElement(component, props);
       }
@@ -121,19 +164,9 @@ export default function(initialState = {}, options = {}) {
     middlewares.push(...arguments);
   }
 
-  function app(view) {
-    return createElement(Provider, {}, view);
-  }
-
   function wrapComponent(stateToProps, component) {
-    return function(props) {
-      return createElement(context.Consumer, {}, state =>
-        createElement(
-          Consumer,
-          Object.assign({ __component: component }, stateToProps(state, props))
-        )
-      );
-    };
+    return props =>
+      createElement(Wrapper, { stateToProps, component, ownedProps: props });
   }
 
   function get() {
@@ -143,7 +176,7 @@ export default function(initialState = {}, options = {}) {
     }
     const view = arguments[0];
     return function(props) {
-      return createElement(context.Consumer, {}, state => view(state, props));
+      return view(state, props);
     };
   }
 
@@ -173,6 +206,18 @@ export default function(initialState = {}, options = {}) {
     const slice = arguments[2];
     let isMergingMode = mode === 'merge';
     const context = { get, set };
+    const compareState = (current, next) => {
+      let changed = false;
+      if (isMergingMode) {
+        for (let key in next) {
+          if (current[key] !== next[key]) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      return changed;
+    };
     const process = result => {
       middlewares.reduce(
         (next, current) => {
@@ -185,21 +230,13 @@ export default function(initialState = {}, options = {}) {
         },
         function(result) {
           if (slice) {
-            if (result === state[slice]) return;
+            if (compareState(state[slice], result)) return;
             result = Object.assign({}, state, { [slice]: result });
           }
 
           if (result === undefined || result === null || result === state)
             return;
-          if (isMergingMode) {
-            let changed = false;
-            for (let key in result) {
-              if (result[key] !== state[key]) {
-                changed = true;
-                break;
-              }
-            }
-            if (!changed) return;
+          if (compareState(state, result)) {
             result = Object.assign({}, state, result);
           }
 
@@ -217,6 +254,11 @@ export default function(initialState = {}, options = {}) {
     }
     return process(newState);
   }
+
+  function app(view) {
+    return view(state);
+  }
+
   return {
     app,
     get,
