@@ -3,14 +3,15 @@
 A state management based on new React context API. It is lightweight but powerful. Depend on React only
 
 ## Features
-1. Lightweight
-1. Using new React Context API
-1. Simple API
-1. Support middleware
-1. Support multiple state updating modes
-1. Support Sync and Async update
-1. Support Async Component
-1. Support immutablejs
+
+1.  Lightweight
+1.  Using new React Context API
+1.  Simple API
+1.  Support middleware
+1.  Support multiple state updating modes
+1.  Support Sync and Async update
+1.  Support Async Component
+1.  Support immutablejs
 
 ## Counter sample
 
@@ -164,14 +165,22 @@ loadTodosFrom("http://tempuri.org");
 
 ```jsx
 import create from "stateapi";
-const { get } = create({ source: 'http://tempuri.org });
+const { get } = create({ source: "http://tempuri.org" });
 
-const TodoList = get(state => ({ source: state.source })
-    , props => fetch(props.source)
-        .then(todos => todos.map(todo => <TodoItem todo={todo}/>)));
-        
-const AscynComponentWrapper = get(state => ({ /* Profile props here */ }), props => import('./Profile'))
-        
+const TodoList = get(
+  state => ({ source: state.source }),
+  props =>
+    fetch(props.source).then(todos =>
+      todos.map(todo => <TodoItem todo={todo} />)
+    )
+);
+
+const AscynComponentWrapper = get(
+  state => ({
+    /* Profile props here */
+  }),
+  props => import("./Profile")
+);
 ```
 
 ## Support immutable

@@ -1,6 +1,6 @@
 {
   "name": "stateapi",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A state management based on new React context API. It is lightweight but powerful",
   "main": "./dist/index.js",
   "scripts": {
