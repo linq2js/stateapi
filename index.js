@@ -1,8 +1,8 @@
-import { Component, PureComponent, createContext, createElement } from "react";
+import { Component, PureComponent, createContext, createElement } from 'react';
 
 function isComponent(component) {
   return (
-    typeof component === "function" &&
+    typeof component === 'function' &&
     (component.prototype instanceof Component ||
       component.prototype instanceof PureComponent)
   );
@@ -10,7 +10,7 @@ function isComponent(component) {
 
 export default function(initialState = {}, options = {}) {
   let state = initialState;
-  const { mode = "merge" } = options;
+  const { mode = 'merge' } = options;
   const context = createContext();
   const handlers = [];
   const middlewares = [];
@@ -53,7 +53,7 @@ export default function(initialState = {}, options = {}) {
         return createElement(component, props);
       }
       const renderResult = component(props, this);
-      if (renderResult && typeof renderResult.then === "function") {
+      if (renderResult && typeof renderResult.then === 'function') {
         this.promise = renderResult;
         renderResult.then(
           result => {
@@ -62,7 +62,7 @@ export default function(initialState = {}, options = {}) {
 
             this.lastResult = result;
 
-            if (typeof result === "object" && result.default) {
+            if (typeof result === 'object' && result.default) {
               // support import() result
               result = result.default;
             }
@@ -73,7 +73,7 @@ export default function(initialState = {}, options = {}) {
               result = success(result);
             }
 
-            if (typeof result === "function") {
+            if (typeof result === 'function') {
               if (isComponent(result)) {
                 result = createElement(result, normalizedProps);
               } else {
@@ -88,11 +88,11 @@ export default function(initialState = {}, options = {}) {
             if (this.promise !== renderResult) return;
             this.lastResult = error;
             this.promiseResult =
-              typeof props.failure === "function"
+              typeof props.failure === 'function'
                 ? props.failure(error)
                 : props.failure !== undefined
-                  ? props.failure
-                  : error;
+                ? props.failure
+                : error;
           }
         );
         return props.loading === undefined ? null : props.loading;
@@ -125,22 +125,21 @@ export default function(initialState = {}, options = {}) {
     return createElement(Provider, {}, view);
   }
 
+  function wrapComponent(stateToProps, component) {
+    return function(props) {
+      return createElement(context.Consumer, {}, state =>
+        createElement(
+          Consumer,
+          Object.assign({ __component: component }, stateToProps(state, props))
+        )
+      );
+    };
+  }
+
   function get() {
     if (!arguments.length) return state;
     if (arguments.length > 1) {
-      const stateToProps = arguments[0];
-      const component = arguments[1];
-      return function(props) {
-        return createElement(context.Consumer, {}, state =>
-          createElement(
-            Consumer,
-            Object.assign(
-              { __component: component },
-              stateToProps(state, props)
-            )
-          )
-        );
-      };
+      return wrapComponent(arguments[0], arguments[1]);
     }
     const view = arguments[0];
     return function(props) {
@@ -148,22 +147,31 @@ export default function(initialState = {}, options = {}) {
     };
   }
 
-  function set(newState, target) {
-    if (typeof newState === "function") {
-      const action = newState;
+  function createDispatcher(action, target, slice) {
+    const dispatcher = function(...args) {
+      return set(action(slice ? state[slice] : state, ...args), target, slice);
+    };
 
-      const dispatcher = function(...args) {
-        return set(action(state, ...args), target);
-      };
-
-      if (target === undefined) {
-        target = dispatcher;
-      }
-
-      return dispatcher;
+    if (target === undefined) {
+      target = dispatcher;
     }
 
-    let isMergingMode = mode === "merge";
+    return dispatcher;
+  }
+
+  function set() {
+    if (typeof arguments[0] === 'function') {
+      return createDispatcher(arguments[0], arguments[1]);
+    }
+
+    if (typeof arguments[0] === 'string') {
+      return createDispatcher(arguments[1], arguments[2], arguments[0]);
+    }
+
+    const newState = arguments[0];
+    const target = arguments[1];
+    const slice = arguments[2];
+    let isMergingMode = mode === 'merge';
     const context = { get, set };
     const process = result => {
       middlewares.reduce(
@@ -176,29 +184,34 @@ export default function(initialState = {}, options = {}) {
           };
         },
         function(result) {
-          if (result !== undefined && result !== null && result !== state) {
-            if (isMergingMode) {
-              let changed = false;
-              for (let key in result) {
-                if (result[key] !== state[key]) {
-                  changed = true;
-                  break;
-                }
-              }
-              if (!changed) return;
-              result = Object.assign({}, state, result);
-            }
-
-            state = result;
-            notifyChange(target);
+          if (slice) {
+            if (result === state[slice]) return;
+            result = Object.assign({}, state, { [slice]: result });
           }
+
+          if (result === undefined || result === null || result === state)
+            return;
+          if (isMergingMode) {
+            let changed = false;
+            for (let key in result) {
+              if (result[key] !== state[key]) {
+                changed = true;
+                break;
+              }
+            }
+            if (!changed) return;
+            result = Object.assign({}, state, result);
+          }
+
+          state = result;
+          notifyChange(target);
         }
       )(result, target);
 
       return state;
     };
 
-    if (newState && typeof newState.then === "function") {
+    if (newState && typeof newState.then === 'function') {
       isMergingMode = true;
       return newState.then(process);
     }
