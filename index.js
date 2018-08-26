@@ -1,17 +1,18 @@
-import { Component, PureComponent, createElement } from 'react';
+import { Component, PureComponent, createElement } from "react";
 
 const isDevMode =
-  !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+  !process.env.NODE_ENV || process.env.NODE_ENV === "development";
 
 function isComponent(component) {
   return (
-    typeof component === 'function' &&
+    typeof component === "function" &&
     (component.prototype instanceof Component ||
       component.prototype instanceof PureComponent)
   );
 }
 
-function compute(computedProps, state) {
+function compute(computedProps, getState) {
+  const state = getState();
   for (let computedPropName in computedProps) {
     const evalutator = computedProps[computedPropName];
     if (evalutator.inMemory) continue;
@@ -34,8 +35,8 @@ function shallowEqual(value1, value2, ignoreFuncs) {
         const value2Prop = value2[i];
         if (
           ignoreFuncs &&
-          typeof value1Prop === 'function' &&
-          typeof value2Prop === 'function'
+          typeof value1Prop === "function" &&
+          typeof value2Prop === "function"
         )
           continue;
         if (value1Prop !== value2Prop) return false;
@@ -49,8 +50,8 @@ function shallowEqual(value1, value2, ignoreFuncs) {
       const value2Prop = value2[key];
       if (
         ignoreFuncs &&
-        typeof value1Prop === 'function' &&
-        typeof value2Prop === 'function'
+        typeof value1Prop === "function" &&
+        typeof value2Prop === "function"
       )
         continue;
       if (value1Prop !== value2Prop) return false;
@@ -62,7 +63,7 @@ function shallowEqual(value1, value2, ignoreFuncs) {
 
 export default function(initialState = {}, options = {}) {
   let state = initialState;
-  const { mode = 'merge' } = options;
+  const { mode = "merge" } = options;
   const handlers = [];
   const middlewares = [];
   const computedProps = {};
@@ -128,7 +129,7 @@ export default function(initialState = {}, options = {}) {
       }
       const renderResult = component(props, this);
       // renderResult might be promise (import, custom data loading)
-      if (renderResult && typeof renderResult.then === 'function') {
+      if (renderResult && typeof renderResult.then === "function") {
         this.promise = renderResult;
         renderResult.then(
           result => {
@@ -139,8 +140,8 @@ export default function(initialState = {}, options = {}) {
 
             // handle import default
             if (
-              typeof result === 'object' &&
-              typeof result.default === 'function'
+              typeof result === "object" &&
+              typeof result.default === "function"
             ) {
               result = result.default;
             }
@@ -154,7 +155,7 @@ export default function(initialState = {}, options = {}) {
             }
 
             // result might be component, so we poss all props of current to it
-            if (typeof result === 'function') {
+            if (typeof result === "function") {
               if (isComponent(result)) {
                 result = createElement(result, normalizedProps);
               } else {
@@ -169,11 +170,11 @@ export default function(initialState = {}, options = {}) {
             if (this.promise !== renderResult) return;
             this.lastResult = error;
             this.promiseResult =
-              typeof props.failure === 'function'
+              typeof props.failure === "function"
                 ? props.failure(error)
                 : props.failure !== undefined
-                ? props.failure
-                : error;
+                  ? props.failure
+                  : error;
           }
         );
         return props.loading === undefined ? null : props.loading;
@@ -237,18 +238,18 @@ export default function(initialState = {}, options = {}) {
   }
 
   function set() {
-    if (typeof arguments[0] === 'function') {
+    if (typeof arguments[0] === "function") {
       return createDispatcher(arguments[0], arguments[1]);
     }
 
-    if (typeof arguments[0] === 'string') {
+    if (typeof arguments[0] === "string") {
       return createDispatcher(arguments[1], arguments[2], arguments[0]);
     }
 
     const newState = arguments[0];
     const target = arguments[1];
     const slice = arguments[2];
-    let isMergingMode = mode === 'merge';
+    let isMergingMode = mode === "merge";
     const context = { get, set };
     const compareState = (current, next) => {
       let changed = false;
@@ -285,7 +286,7 @@ export default function(initialState = {}, options = {}) {
 
           state = result;
           // call computed props
-          compute(computedProps, state);
+          compute(computedProps, get);
           notifyChange(target);
         }
       )(result, target);
@@ -293,7 +294,7 @@ export default function(initialState = {}, options = {}) {
       return state;
     };
 
-    if (newState && typeof newState.then === 'function') {
+    if (newState && typeof newState.then === "function") {
       isMergingMode = true;
       return newState.then(process);
     }
@@ -305,41 +306,49 @@ export default function(initialState = {}, options = {}) {
   }
 
   function computed(props) {
-    if (typeof props === 'string') {
+    if (typeof props === "string") {
       if (!(props in computedProps)) {
         throw new Error(`No computed prop named ${props}`);
       }
       return computedProps[props](state);
     }
     let hasChanged = false;
-    for (let i in props) {
+    Object.keys(props).forEach(i => {
+      const func = selector(props[i]);
       const parts = i.split(/\s+/);
       // prop name is first part
       let prop = parts.shift();
-      const inMemory = prop[0] === '@';
+      const inMemory = prop[0] === "@";
       if (inMemory) {
         prop = prop.substr(1);
       }
-      const selectors = parts.map(s => {
-        // create default computed props
-        if (!(s in computedProps)) {
-          return Object.assign(state => state[s], { inMemory: true });
-        }
-        return computedProps[s];
-      });
 
       computedProps[prop] = Object.assign(
-        selector.apply(null, selectors.concat(props[i])),
+        selector(function(state) {
+          const mappedArgs = parts.map(part => {
+            const argSelector = computedProps[part];
+            if (argSelector) {
+              return argSelector(state);
+            }
+            return state[part];
+          });
+
+          return func.apply(null, mappedArgs);
+        }),
         {
-          inMemory
+          inMemory,
+          dependencies: parts.reduce((obj, key) => {
+            obj[key] = true;
+            return obj;
+          }, {})
         }
       );
       hasChanged = true;
-    }
+    });
 
     if (hasChanged) {
       // re-compute once computedProps changed
-      compute(computedProps, state);
+      compute(computedProps, get);
     }
   }
 
