@@ -1,23 +1,32 @@
-import { Component, PureComponent, createElement } from "react";
+import { Component, PureComponent, createElement } from 'react';
 
+let storeId = 0;
 const isDevMode =
-  !process.env.NODE_ENV || process.env.NODE_ENV === "development";
+  !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
 
 function isComponent(component) {
   return (
-    typeof component === "function" &&
+    typeof component === 'function' &&
     (component.prototype instanceof Component ||
       component.prototype instanceof PureComponent)
   );
 }
 
-function compute(computedProps, getState) {
+function compute(computedProps, getState, onUpdate) {
   const state = getState();
+  const hasSetter = typeof state.set === 'function';
+
   for (let computedPropName in computedProps) {
     const evalutator = computedProps[computedPropName];
     if (evalutator.inMemory) continue;
+
     const value = evalutator(state);
-    state[computedPropName] = value;
+
+    if (hasSetter) {
+      state.set(computedPropName, value);
+    } else {
+      state[computedPropName] = value;
+    }
   }
 }
 
@@ -35,8 +44,8 @@ function shallowEqual(value1, value2, ignoreFuncs) {
         const value2Prop = value2[i];
         if (
           ignoreFuncs &&
-          typeof value1Prop === "function" &&
-          typeof value2Prop === "function"
+          typeof value1Prop === 'function' &&
+          typeof value2Prop === 'function'
         )
           continue;
         if (value1Prop !== value2Prop) return false;
@@ -50,8 +59,8 @@ function shallowEqual(value1, value2, ignoreFuncs) {
       const value2Prop = value2[key];
       if (
         ignoreFuncs &&
-        typeof value1Prop === "function" &&
-        typeof value2Prop === "function"
+        typeof value1Prop === 'function' &&
+        typeof value2Prop === 'function'
       )
         continue;
       if (value1Prop !== value2Prop) return false;
@@ -63,10 +72,13 @@ function shallowEqual(value1, value2, ignoreFuncs) {
 
 export default function(initialState = {}, options = {}) {
   let state = initialState;
-  const { mode = "merge" } = options;
+  const { mode = 'merge' } = options;
   const handlers = [];
   const middlewares = [];
   const computedProps = {};
+  const connected = {};
+  const id = storeId++;
+  const defaultStateToProps = x => x;
 
   class Wrapper extends Component {
     constructor(props) {
@@ -74,7 +86,7 @@ export default function(initialState = {}, options = {}) {
 
       this.off = on(() => {
         // this might cause unwanted error
-        // typically I should use this.setState(dummyState) to force component re-render
+        // typically should use this.setState(dummyState) to force component re-render
         // but for performance improving, setState(dummyState) leads to more validation steps and get slow,
         // so I use forceUpdate for the best performance (~2x)
         try {
@@ -129,7 +141,7 @@ export default function(initialState = {}, options = {}) {
       }
       const renderResult = component(props, this);
       // renderResult might be promise (import, custom data loading)
-      if (renderResult && typeof renderResult.then === "function") {
+      if (renderResult && typeof renderResult.then === 'function') {
         this.promise = renderResult;
         renderResult.then(
           result => {
@@ -140,8 +152,8 @@ export default function(initialState = {}, options = {}) {
 
             // handle import default
             if (
-              typeof result === "object" &&
-              typeof result.default === "function"
+              typeof result === 'object' &&
+              typeof result.default === 'function'
             ) {
               result = result.default;
             }
@@ -155,7 +167,7 @@ export default function(initialState = {}, options = {}) {
             }
 
             // result might be component, so we poss all props of current to it
-            if (typeof result === "function") {
+            if (typeof result === 'function') {
               if (isComponent(result)) {
                 result = createElement(result, normalizedProps);
               } else {
@@ -170,11 +182,11 @@ export default function(initialState = {}, options = {}) {
             if (this.promise !== renderResult) return;
             this.lastResult = error;
             this.promiseResult =
-              typeof props.failure === "function"
+              typeof props.failure === 'function'
                 ? props.failure(error)
                 : props.failure !== undefined
-                  ? props.failure
-                  : error;
+                ? props.failure
+                : error;
           }
         );
         return props.loading === undefined ? null : props.loading;
@@ -204,7 +216,7 @@ export default function(initialState = {}, options = {}) {
     middlewares.push(...arguments);
   }
 
-  function wrapComponent(stateToProps, component) {
+  function wrapComponent(stateToProps = (state, props) => props, component) {
     return props =>
       createElement(Wrapper, {
         stateToProps,
@@ -219,10 +231,7 @@ export default function(initialState = {}, options = {}) {
     if (arguments.length > 1) {
       return wrapComponent(arguments[0], arguments[1]);
     }
-    const view = arguments[0];
-    return function(props) {
-      return view(state, props);
-    };
+    return wrapComponent(defaultStateToProps, arguments[0]);
   }
 
   function createDispatcher(action, target, slice) {
@@ -238,18 +247,18 @@ export default function(initialState = {}, options = {}) {
   }
 
   function set() {
-    if (typeof arguments[0] === "function") {
+    if (typeof arguments[0] === 'function') {
       return createDispatcher(arguments[0], arguments[1]);
     }
 
-    if (typeof arguments[0] === "string") {
+    if (typeof arguments[0] === 'string') {
       return createDispatcher(arguments[1], arguments[2], arguments[0]);
     }
 
     const newState = arguments[0];
     const target = arguments[1];
     const slice = arguments[2];
-    let isMergingMode = mode === "merge";
+    let isMergingMode = mode === 'merge';
     const context = { get, set };
     const compareState = (current, next) => {
       let changed = false;
@@ -286,7 +295,7 @@ export default function(initialState = {}, options = {}) {
 
           state = result;
           // call computed props
-          compute(computedProps, get);
+          compute(computedProps, get, notifyChange);
           notifyChange(target);
         }
       )(result, target);
@@ -294,7 +303,7 @@ export default function(initialState = {}, options = {}) {
       return state;
     };
 
-    if (newState && typeof newState.then === "function") {
+    if (newState && typeof newState.then === 'function') {
       isMergingMode = true;
       return newState.then(process);
     }
@@ -306,7 +315,7 @@ export default function(initialState = {}, options = {}) {
   }
 
   function computed(props) {
-    if (typeof props === "string") {
+    if (typeof props === 'string') {
       if (!(props in computedProps)) {
         throw new Error(`No computed prop named ${props}`);
       }
@@ -318,7 +327,13 @@ export default function(initialState = {}, options = {}) {
       const parts = i.split(/\s+/);
       // prop name is first part
       let prop = parts.shift();
-      const inMemory = prop[0] === "@";
+      let isAsync = false;
+      if (prop.startsWith('async ')) {
+        isAsync = true;
+        prop = prop.substr(6).trim();
+      }
+
+      const inMemory = prop[0] === '@';
       if (inMemory) {
         prop = prop.substr(1);
       }
@@ -337,6 +352,7 @@ export default function(initialState = {}, options = {}) {
         }),
         {
           inMemory,
+          isAsync,
           dependencies: parts.reduce((obj, key) => {
             obj[key] = true;
             return obj;
@@ -346,18 +362,75 @@ export default function(initialState = {}, options = {}) {
       hasChanged = true;
     });
 
+    // rebuild dependencies
+    for (let i in computedProps) {
+      const evalutator = computedProps[i];
+      evalutator.dependents = [];
+      for (let j in computedProps) {
+        const subEvalutator = computedProps[j];
+        if (subEvalutator.dependencies[i]) {
+          evalutator.dependents.push(j);
+        }
+      }
+    }
+
     if (hasChanged) {
       // re-compute once computedProps changed
-      compute(computedProps, get);
+      compute(computedProps, get, notifyChange);
     }
   }
 
+  function validateConnection(store) {
+    Object.values(store.connected).forEach(connection => {
+      if (connection.store.id === id) throw new Error('Circular connect');
+      validateConnection(connection.store);
+    });
+  }
+
+  // create one way connection
+  function connect(store, mapper) {
+    if (typeof mapper === 'string') {
+      const [destProp, sourceProp = destProp] = mapper.split(/\s*=\s*/);
+
+      mapper = function(destState, sourceState) {
+        const sourceValue =
+          sourceProp && sourceProp !== '*'
+            ? sourceState[sourceProp]
+            : sourceState;
+        // nothing to change
+        if (sourceValue === destState[destProp]) return destState;
+        return {
+          ...destState,
+          [destProp]: sourceValue
+        };
+      };
+    }
+    validateConnection(store);
+    connected[store.id] = {
+      store
+    };
+
+    function handleChange(destState) {
+      const nextState = mapper(state, destState);
+      if (nextState !== state) {
+        set(nextState);
+      }
+    }
+
+    store.on(handleChange);
+
+    handleChange(store.get());
+  }
+
   return {
+    id,
     app,
     get,
     set,
     on,
     use,
+    connect,
+    connected,
     computed,
     hoc: stateToProps => component => get(stateToProps, component)
   };

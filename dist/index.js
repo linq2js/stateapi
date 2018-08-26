@@ -1,8 +1,12 @@
-"use strict";
+'use strict';
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
 
@@ -14,11 +18,16 @@ exports.default = function () {
 
   var state = initialState;
   var _options$mode = options.mode,
-      mode = _options$mode === undefined ? "merge" : _options$mode;
+      mode = _options$mode === undefined ? 'merge' : _options$mode;
 
   var handlers = [];
   var middlewares = [];
   var computedProps = {};
+  var connected = {};
+  var id = storeId++;
+  var defaultStateToProps = function defaultStateToProps(x) {
+    return x;
+  };
 
   var Wrapper = function (_Component) {
     _inherits(Wrapper, _Component);
@@ -30,7 +39,7 @@ exports.default = function () {
 
       _this.off = on(function () {
         // this might cause unwanted error
-        // typically I should use this.setState(dummyState) to force component re-render
+        // typically should use this.setState(dummyState) to force component re-render
         // but for performance improving, setState(dummyState) leads to more validation steps and get slow,
         // so I use forceUpdate for the best performance (~2x)
         try {
@@ -49,12 +58,12 @@ exports.default = function () {
     }
 
     _createClass(Wrapper, [{
-      key: "mapProps",
+      key: 'mapProps',
       value: function mapProps(props) {
         return this.props.stateToProps(state, props);
       }
     }, {
-      key: "shouldComponentUpdate",
+      key: 'shouldComponentUpdate',
       value: function shouldComponentUpdate(nextProps) {
         var nextMappedProps = this.mapProps(nextProps.ownedProps);
         if (shallowEqual(nextMappedProps, this.mappedProps, true)) {
@@ -64,13 +73,13 @@ exports.default = function () {
         return true;
       }
     }, {
-      key: "componentWillUnmount",
+      key: 'componentWillUnmount',
       value: function componentWillUnmount() {
         this.unmount = true;
         this.off();
       }
     }, {
-      key: "render",
+      key: 'render',
       value: function render() {
         var _this2 = this;
 
@@ -93,7 +102,7 @@ exports.default = function () {
         }
         var renderResult = component(props, this);
         // renderResult might be promise (import, custom data loading)
-        if (renderResult && typeof renderResult.then === "function") {
+        if (renderResult && typeof renderResult.then === 'function') {
           this.promise = renderResult;
           renderResult.then(function (result) {
             if (_this2.promise !== renderResult) return;
@@ -102,7 +111,7 @@ exports.default = function () {
             _this2.lastResult = result;
 
             // handle import default
-            if ((typeof result === "undefined" ? "undefined" : _typeof(result)) === "object" && typeof result.default === "function") {
+            if ((typeof result === 'undefined' ? 'undefined' : _typeof(result)) === 'object' && typeof result.default === 'function') {
               result = result.default;
             }
 
@@ -111,7 +120,7 @@ exports.default = function () {
             var success = props.success,
                 failure = props.failure,
                 loading = props.loading,
-                normalizedProps = _objectWithoutProperties(props, ["success", "failure", "loading"]);
+                normalizedProps = _objectWithoutProperties(props, ['success', 'failure', 'loading']);
 
             // call success handling if any
 
@@ -121,7 +130,7 @@ exports.default = function () {
             }
 
             // result might be component, so we poss all props of current to it
-            if (typeof result === "function") {
+            if (typeof result === 'function') {
               if (isComponent(result)) {
                 result = (0, _react.createElement)(result, normalizedProps);
               } else {
@@ -134,7 +143,7 @@ exports.default = function () {
           }, function (error) {
             if (_this2.promise !== renderResult) return;
             _this2.lastResult = error;
-            _this2.promiseResult = typeof props.failure === "function" ? props.failure(error) : props.failure !== undefined ? props.failure : error;
+            _this2.promiseResult = typeof props.failure === 'function' ? props.failure(error) : props.failure !== undefined ? props.failure : error;
           });
           return props.loading === undefined ? null : props.loading;
         }
@@ -166,7 +175,12 @@ exports.default = function () {
     middlewares.push.apply(middlewares, arguments);
   }
 
-  function wrapComponent(stateToProps, component) {
+  function wrapComponent() {
+    var stateToProps = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : function (state, props) {
+      return props;
+    };
+    var component = arguments[1];
+
     return function (props) {
       return (0, _react.createElement)(Wrapper, {
         stateToProps: stateToProps,
@@ -182,10 +196,7 @@ exports.default = function () {
     if (arguments.length > 1) {
       return wrapComponent(arguments[0], arguments[1]);
     }
-    var view = arguments[0];
-    return function (props) {
-      return view(state, props);
-    };
+    return wrapComponent(defaultStateToProps, arguments[0]);
   }
 
   function createDispatcher(action, target, slice) {
@@ -205,18 +216,18 @@ exports.default = function () {
   }
 
   function set() {
-    if (typeof arguments[0] === "function") {
+    if (typeof arguments[0] === 'function') {
       return createDispatcher(arguments[0], arguments[1]);
     }
 
-    if (typeof arguments[0] === "string") {
+    if (typeof arguments[0] === 'string') {
       return createDispatcher(arguments[1], arguments[2], arguments[0]);
     }
 
     var newState = arguments[0];
     var target = arguments[1];
     var slice = arguments[2];
-    var isMergingMode = mode === "merge";
+    var isMergingMode = mode === 'merge';
     var context = { get: get, set: set };
     var compareState = function compareState(current, next) {
       var changed = false;
@@ -250,14 +261,14 @@ exports.default = function () {
 
         state = result;
         // call computed props
-        compute(computedProps, get);
+        compute(computedProps, get, notifyChange);
         notifyChange(target);
       })(result, target);
 
       return state;
     };
 
-    if (newState && typeof newState.then === "function") {
+    if (newState && typeof newState.then === 'function') {
       isMergingMode = true;
       return newState.then(process);
     }
@@ -269,9 +280,9 @@ exports.default = function () {
   }
 
   function computed(props) {
-    if (typeof props === "string") {
+    if (typeof props === 'string') {
       if (!(props in computedProps)) {
-        throw new Error("No computed prop named " + props);
+        throw new Error('No computed prop named ' + props);
       }
       return computedProps[props](state);
     }
@@ -281,7 +292,13 @@ exports.default = function () {
       var parts = i.split(/\s+/);
       // prop name is first part
       var prop = parts.shift();
-      var inMemory = prop[0] === "@";
+      var isAsync = false;
+      if (prop.startsWith('async ')) {
+        isAsync = true;
+        prop = prop.substr(6).trim();
+      }
+
+      var inMemory = prop[0] === '@';
       if (inMemory) {
         prop = prop.substr(1);
       }
@@ -298,6 +315,7 @@ exports.default = function () {
         return func.apply(null, mappedArgs);
       }), {
         inMemory: inMemory,
+        isAsync: isAsync,
         dependencies: parts.reduce(function (obj, key) {
           obj[key] = true;
           return obj;
@@ -306,18 +324,73 @@ exports.default = function () {
       hasChanged = true;
     });
 
+    // rebuild dependencies
+    for (var i in computedProps) {
+      var evalutator = computedProps[i];
+      evalutator.dependents = [];
+      for (var j in computedProps) {
+        var subEvalutator = computedProps[j];
+        if (subEvalutator.dependencies[i]) {
+          evalutator.dependents.push(j);
+        }
+      }
+    }
+
     if (hasChanged) {
       // re-compute once computedProps changed
-      compute(computedProps, get);
+      compute(computedProps, get, notifyChange);
     }
   }
 
+  function validateConnection(store) {
+    Object.values(store.connected).forEach(function (connection) {
+      if (connection.store.id === id) throw new Error('Circular connect');
+      validateConnection(connection.store);
+    });
+  }
+
+  // create one way connection
+  function connect(store, mapper) {
+    if (typeof mapper === 'string') {
+      var _mapper$split = mapper.split(/\s*=\s*/),
+          _mapper$split2 = _slicedToArray(_mapper$split, 2),
+          destProp = _mapper$split2[0],
+          _mapper$split2$ = _mapper$split2[1],
+          sourceProp = _mapper$split2$ === undefined ? destProp : _mapper$split2$;
+
+      mapper = function mapper(destState, sourceState) {
+        var sourceValue = sourceProp && sourceProp !== '*' ? sourceState[sourceProp] : sourceState;
+        // nothing to change
+        if (sourceValue === destState[destProp]) return destState;
+        return _extends({}, destState, _defineProperty({}, destProp, sourceValue));
+      };
+    }
+    validateConnection(store);
+    connected[store.id] = {
+      store: store
+    };
+
+    function handleChange(destState) {
+      var nextState = mapper(state, destState);
+      if (nextState !== state) {
+        set(nextState);
+      }
+    }
+
+    store.on(handleChange);
+
+    handleChange(store.get());
+  }
+
   return {
+    id: id,
     app: app,
     get: get,
     set: set,
     on: on,
     use: use,
+    connect: connect,
+    connected: connected,
     computed: computed,
     hoc: function hoc(stateToProps) {
       return function (component) {
@@ -329,7 +402,7 @@ exports.default = function () {
 
 exports.selector = selector;
 
-var _react = require("react");
+var _react = require('react');
 
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
 
@@ -341,19 +414,28 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var isDevMode = !process.env.NODE_ENV || process.env.NODE_ENV === "development";
+var storeId = 0;
+var isDevMode = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
 
 function isComponent(component) {
-  return typeof component === "function" && (component.prototype instanceof _react.Component || component.prototype instanceof _react.PureComponent);
+  return typeof component === 'function' && (component.prototype instanceof _react.Component || component.prototype instanceof _react.PureComponent);
 }
 
-function compute(computedProps, getState) {
+function compute(computedProps, getState, onUpdate) {
   var state = getState();
+  var hasSetter = typeof state.set === 'function';
+
   for (var computedPropName in computedProps) {
     var evalutator = computedProps[computedPropName];
     if (evalutator.inMemory) continue;
+
     var value = evalutator(state);
-    state[computedPropName] = value;
+
+    if (hasSetter) {
+      state.set(computedPropName, value);
+    } else {
+      state[computedPropName] = value;
+    }
   }
 }
 
@@ -369,7 +451,7 @@ function shallowEqual(value1, value2, ignoreFuncs) {
       for (var i = 0; i < length; i++) {
         var value1Prop = value1[i];
         var value2Prop = value2[i];
-        if (ignoreFuncs && typeof value1Prop === "function" && typeof value2Prop === "function") continue;
+        if (ignoreFuncs && typeof value1Prop === 'function' && typeof value2Prop === 'function') continue;
         if (value1Prop !== value2Prop) return false;
       }
       return true;
@@ -386,7 +468,7 @@ function shallowEqual(value1, value2, ignoreFuncs) {
 
         var _value1Prop = value1[key];
         var _value2Prop = value2[key];
-        if (ignoreFuncs && typeof _value1Prop === "function" && typeof _value2Prop === "function") continue;
+        if (ignoreFuncs && typeof _value1Prop === 'function' && typeof _value2Prop === 'function') continue;
         if (_value1Prop !== _value2Prop) return false;
       }
     } catch (err) {

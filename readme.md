@@ -238,10 +238,10 @@ const { get, computed } = create({
 computed({
   // define in-memory computed prop pageCount
   // it has 2 dependencies: pageSize and totalItems
-  "#pageCount pageSize totalItems": (pageSize, totalItems) =>
+  "@pageCount pageSize totalItems": (pageSize, totalItems) =>
     Math.ceil(totalItems / pageSize),
-  "#canPrev page": (page, pageCount) => page > 0 && page < pageCount,
-  "#canNext page pageCount": (page, pageCount) => page < pageCount - 1,
+  "@canPrev page": (page, pageCount) => page > 0 && page < pageCount,
+  "@canNext page pageCount": (page, pageCount) => page < pageCount - 1,
   "pagination pageCount canPrev canNext": (pageCount, canPrev, canNext) => ({
     pageCount,
     canPrev,
@@ -250,4 +250,16 @@ computed({
 });
 
 console.log(get().pagination); // => { pageCount: 2, canPrev: false, canNext: true }
+```
+
+## Connect multiple stores
+```js
+const primaryStore = create({ counter: 1 });
+const secondaryStore = create();
+
+// connect secondaryStore to primaryStore
+// once primaryStore changed, counter value will be copied to secondaryStore and change notification will be triggered
+secondaryStore.connect(primaryStore, 'counter');
+
+console.log(secondaryStore.get('counter')); // => 1
 ```
