@@ -18,6 +18,7 @@ exports.default = function () {
 
   var handlers = [];
   var middlewares = [];
+  var computedProps = {};
 
   var Wrapper = function (_Component) {
     _inherits(Wrapper, _Component);
@@ -28,6 +29,10 @@ exports.default = function () {
       var _this = _possibleConstructorReturn(this, (Wrapper.__proto__ || Object.getPrototypeOf(Wrapper)).call(this, props));
 
       _this.off = on(function () {
+        // this might cause unwanted error
+        // typically I should use this.setState(dummyState) to force component re-render
+        // but for performance improving, setState(dummyState) leads to more validation steps and get slow,
+        // so I use forceUpdate for the best performance (~2x)
         try {
           if (!_this.shouldComponentUpdate(_this.props)) return;
         } catch (ex) {
@@ -78,14 +83,16 @@ exports.default = function () {
           }
         } else {
           // props has been changed
+          // clean last result
+          delete this.lastResult;
         }
 
         this.lastProps = props;
-        var isClass = isComponent(component);
-        if (isClass) {
+        if (this.props.isComp) {
           return (0, _react.createElement)(component, props);
         }
         var renderResult = component(props, this);
+        // renderResult might be promise (import, custom data loading)
         if (renderResult && typeof renderResult.then === 'function') {
           this.promise = renderResult;
           renderResult.then(function (result) {
@@ -94,25 +101,31 @@ exports.default = function () {
 
             _this2.lastResult = result;
 
-            if ((typeof result === 'undefined' ? 'undefined' : _typeof(result)) === 'object' && result.default) {
-              // support import() result
+            // handle import default
+            if ((typeof result === 'undefined' ? 'undefined' : _typeof(result)) === 'object' && typeof result.default === 'function') {
               result = result.default;
             }
+
+            // exclude async props
 
             var success = props.success,
                 failure = props.failure,
                 loading = props.loading,
                 normalizedProps = _objectWithoutProperties(props, ['success', 'failure', 'loading']);
 
+            // call success handling if any
+
+
             if (success) {
               result = success(result);
             }
 
+            // result might be component, so we poss all props of current to it
             if (typeof result === 'function') {
               if (isComponent(result)) {
                 result = (0, _react.createElement)(result, normalizedProps);
               } else {
-                result = result(normalizedProps);
+                result = result(normalizedProps, _this2);
               }
             }
 
@@ -155,7 +168,12 @@ exports.default = function () {
 
   function wrapComponent(stateToProps, component) {
     return function (props) {
-      return (0, _react.createElement)(Wrapper, { stateToProps: stateToProps, component: component, ownedProps: props });
+      return (0, _react.createElement)(Wrapper, {
+        stateToProps: stateToProps,
+        component: component,
+        ownedProps: props,
+        isComp: isComponent(component)
+      });
     };
   }
 
@@ -217,7 +235,9 @@ exports.default = function () {
         return function (result, newTarget) {
           current(context)(next)(result, newTarget === undefined ? target : newTarget);
         };
-      }, function (result) {
+      },
+      // default middle, process result
+      function (result) {
         if (slice) {
           if (compareState(state[slice], result)) return;
           result = Object.assign({}, state, _defineProperty({}, slice, result));
@@ -229,6 +249,8 @@ exports.default = function () {
         }
 
         state = result;
+        // call computed props
+        compute(computedProps, state);
         notifyChange(target);
       })(result, target);
 
@@ -243,7 +265,45 @@ exports.default = function () {
   }
 
   function app(view) {
-    return view(state);
+    return get(view)();
+  }
+
+  function computed(props) {
+    if (typeof props === 'string') {
+      if (!(props in computedProps)) {
+        throw new Error('No computed prop named ' + props);
+      }
+      return computedProps[props](state);
+    }
+    var hasChanged = false;
+    for (var i in props) {
+      var parts = i.split(/\s+/);
+      // prop name is first part
+      var prop = parts.shift();
+      var inMemory = prop[0] === '@';
+      if (inMemory) {
+        prop = prop.substr(1);
+      }
+      var selectors = parts.map(function (s) {
+        // create default computed props
+        if (!(s in computedProps)) {
+          return Object.assign(function (state) {
+            return state[s];
+          }, { inMemory: true });
+        }
+        return computedProps[s];
+      });
+
+      computedProps[prop] = Object.assign(selector.apply(null, selectors.concat(props[i])), {
+        inMemory: inMemory
+      });
+      hasChanged = true;
+    }
+
+    if (hasChanged) {
+      // re-compute once computedProps changed
+      compute(computedProps, state);
+    }
   }
 
   return {
@@ -252,6 +312,7 @@ exports.default = function () {
     set: set,
     on: on,
     use: use,
+    computed: computed,
     hoc: function hoc(stateToProps) {
       return function (component) {
         return get(stateToProps, component);
@@ -259,6 +320,8 @@ exports.default = function () {
     }
   };
 };
+
+exports.selector = selector;
 
 var _react = require('react');
 
@@ -276,6 +339,15 @@ var isDevMode = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
 
 function isComponent(component) {
   return typeof component === 'function' && (component.prototype instanceof _react.Component || component.prototype instanceof _react.PureComponent);
+}
+
+function compute(computedProps, state) {
+  for (var computedPropName in computedProps) {
+    var evalutator = computedProps[computedPropName];
+    if (evalutator.inMemory) continue;
+    var value = evalutator(state);
+    state[computedPropName] = value;
+  }
 }
 
 function shallowEqual(value1, value2, ignoreFuncs) {
@@ -328,5 +400,44 @@ function shallowEqual(value1, value2, ignoreFuncs) {
     return true;
   }
   return false;
+}
+
+function selector() {
+  for (var _len2 = arguments.length, funcs = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+    funcs[_key2] = arguments[_key2];
+  }
+
+  var lastFunc = funcs.pop();
+  var lastArgs = void 0,
+      lastResult = void 0;
+  var wrapper = function wrapper() {
+    for (var _len3 = arguments.length, args = Array(_len3), _key3 = 0; _key3 < _len3; _key3++) {
+      args[_key3] = arguments[_key3];
+    }
+
+    if (shallowEqual(lastArgs, args)) {
+      return lastResult;
+    }
+    lastArgs = args;
+    return lastResult = lastFunc.apply(null, args);
+  };
+
+  if (!funcs.length) {
+    return wrapper;
+  }
+
+  var argSelectors = funcs.map(function (x) {
+    return selector(x);
+  });
+  return function () {
+    for (var _len4 = arguments.length, args = Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
+      args[_key4] = arguments[_key4];
+    }
+
+    var mappedArgs = argSelectors.map(function (x) {
+      return x.apply(null, args);
+    });
+    return wrapper.apply(null, mappedArgs);
+  };
 }
 //# sourceMappingURL=index.js.map

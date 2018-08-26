@@ -11,6 +11,15 @@ function isComponent(component) {
   );
 }
 
+function compute(computedProps, state) {
+  for (let computedPropName in computedProps) {
+    const evalutator = computedProps[computedPropName];
+    if (evalutator.inMemory) continue;
+    const value = evalutator(state);
+    state[computedPropName] = value;
+  }
+}
+
 function shallowEqual(value1, value2, ignoreFuncs) {
   if (value1 === value2) return true;
   if (value1 instanceof Date && value2 instanceof Date) {
@@ -56,12 +65,17 @@ export default function(initialState = {}, options = {}) {
   const { mode = 'merge' } = options;
   const handlers = [];
   const middlewares = [];
+  const computedProps = {};
 
   class Wrapper extends Component {
     constructor(props) {
       super(props);
 
       this.off = on(() => {
+        // this might cause unwanted error
+        // typically I should use this.setState(dummyState) to force component re-render
+        // but for performance improving, setState(dummyState) leads to more validation steps and get slow,
+        // so I use forceUpdate for the best performance (~2x)
         try {
           if (!this.shouldComponentUpdate(this.props)) return;
         } catch (ex) {
@@ -104,14 +118,16 @@ export default function(initialState = {}, options = {}) {
         }
       } else {
         // props has been changed
+        // clean last result
+        delete this.lastResult;
       }
 
       this.lastProps = props;
-      const isClass = isComponent(component);
-      if (isClass) {
+      if (this.props.isComp) {
         return createElement(component, props);
       }
       const renderResult = component(props, this);
+      // renderResult might be promise (import, custom data loading)
       if (renderResult && typeof renderResult.then === 'function') {
         this.promise = renderResult;
         renderResult.then(
@@ -121,22 +137,28 @@ export default function(initialState = {}, options = {}) {
 
             this.lastResult = result;
 
-            if (typeof result === 'object' && result.default) {
-              // support import() result
+            // handle import default
+            if (
+              typeof result === 'object' &&
+              typeof result.default === 'function'
+            ) {
               result = result.default;
             }
 
+            // exclude async props
             const { success, failure, loading, ...normalizedProps } = props;
 
+            // call success handling if any
             if (success) {
               result = success(result);
             }
 
+            // result might be component, so we poss all props of current to it
             if (typeof result === 'function') {
               if (isComponent(result)) {
                 result = createElement(result, normalizedProps);
               } else {
-                result = result(normalizedProps);
+                result = result(normalizedProps, this);
               }
             }
 
@@ -183,7 +205,12 @@ export default function(initialState = {}, options = {}) {
 
   function wrapComponent(stateToProps, component) {
     return props =>
-      createElement(Wrapper, { stateToProps, component, ownedProps: props });
+      createElement(Wrapper, {
+        stateToProps,
+        component,
+        ownedProps: props,
+        isComp: isComponent(component)
+      });
   }
 
   function get() {
@@ -237,15 +264,14 @@ export default function(initialState = {}, options = {}) {
     };
     const process = result => {
       middlewares.reduce(
-        (next, current) => {
-          return function(result, newTarget) {
-            current(context)(next)(
-              result,
-              newTarget === undefined ? target : newTarget
-            );
-          };
+        (next, current) => (result, newTarget) => {
+          current(context)(next)(
+            result,
+            newTarget === undefined ? target : newTarget
+          );
         },
-        function(result) {
+        // default middle, process result
+        result => {
           if (slice) {
             if (compareState(state[slice], result)) return;
             result = Object.assign({}, state, { [slice]: result });
@@ -258,6 +284,8 @@ export default function(initialState = {}, options = {}) {
           }
 
           state = result;
+          // call computed props
+          compute(computedProps, state);
           notifyChange(target);
         }
       )(result, target);
@@ -273,7 +301,46 @@ export default function(initialState = {}, options = {}) {
   }
 
   function app(view) {
-    return view(state);
+    return get(view)();
+  }
+
+  function computed(props) {
+    if (typeof props === 'string') {
+      if (!(props in computedProps)) {
+        throw new Error(`No computed prop named ${props}`);
+      }
+      return computedProps[props](state);
+    }
+    let hasChanged = false;
+    for (let i in props) {
+      const parts = i.split(/\s+/);
+      // prop name is first part
+      let prop = parts.shift();
+      const inMemory = prop[0] === '@';
+      if (inMemory) {
+        prop = prop.substr(1);
+      }
+      const selectors = parts.map(s => {
+        // create default computed props
+        if (!(s in computedProps)) {
+          return Object.assign(state => state[s], { inMemory: true });
+        }
+        return computedProps[s];
+      });
+
+      computedProps[prop] = Object.assign(
+        selector.apply(null, selectors.concat(props[i])),
+        {
+          inMemory
+        }
+      );
+      hasChanged = true;
+    }
+
+    if (hasChanged) {
+      // re-compute once computedProps changed
+      compute(computedProps, state);
+    }
   }
 
   return {
@@ -282,6 +349,29 @@ export default function(initialState = {}, options = {}) {
     set,
     on,
     use,
+    computed,
     hoc: stateToProps => component => get(stateToProps, component)
+  };
+}
+
+export function selector(...funcs) {
+  const lastFunc = funcs.pop();
+  let lastArgs, lastResult;
+  const wrapper = function(...args) {
+    if (shallowEqual(lastArgs, args)) {
+      return lastResult;
+    }
+    lastArgs = args;
+    return (lastResult = lastFunc.apply(null, args));
+  };
+
+  if (!funcs.length) {
+    return wrapper;
+  }
+
+  const argSelectors = funcs.map(x => selector(x));
+  return function(...args) {
+    const mappedArgs = argSelectors.map(x => x.apply(null, args));
+    return wrapper.apply(null, mappedArgs);
   };
 }

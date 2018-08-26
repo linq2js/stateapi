@@ -7,6 +7,7 @@ A state management for React. It is lightweight but powerful
 1.  Lightweight
 1.  Simple API
 1.  Support middleware
+1.  Support computed props
 1.  Support multiple state updating modes
 1.  Support Sync and Async update
 1.  Support Async Component
@@ -25,9 +26,9 @@ const { app, get, set } = create({ counter: 0 });
 // define some actions, remmeber that action always returns new state.
 // returning undefined means nothing to change
 // increase counter
-const increase = set(state => ({ ...state, counter: state.counter + 1 }));
+const increase = set(state => ({ counter: state.counter + 1 }));
 // decrease counter
-const decrease = set(state => ({ ...state, counter: state.counter - 1 }));
+const decrease = set(state => ({ counter: state.counter - 1 }));
 
 render(
   app(state => (
@@ -49,11 +50,11 @@ const { use, set } = create({ counter: 0 });
 
 // increase counter
 const increase = set(
-  state => ({ ...state, counter: state.counter + 1 }),
+  state => ({ counter: state.counter + 1 }),
   "increase-action"
 );
 // decrease counter
-const decrease = set(state => ({ ...state, counter: state.counter - 1 }));
+const decrease = set(state => ({ counter: state.counter - 1 }));
 
 use(context => next => (newState, action) => {
   const { get, set } = context;
@@ -141,13 +142,10 @@ const doNothing = set(state => ({ counter: state.counter }));
 
 ```js
 import create from "stateapi";
-const { set } = create({ counter: 0, todos: undefined }, { mode: "replace" });
-// when increase action invoked, stateapi replaces current state with new state
-const increase = set(state => ({ ...state, counter: state.counter + 1 }));
+const { set } = create({ counter: 0, todos: undefined });
+const increase = set(state => ({ counter: state.counter + 1 }));
 increase();
 
-// stateapi will perform state merging if action returns Promise
-// because state might be changed before promise is resolved
 const loadTodosFrom = set((state, url) =>
   fetch(url)
     .then(res => res.json())
@@ -192,4 +190,64 @@ const increase = set(state => state.set("counter", state.get("counter") + 1));
 const newState = increase();
 expect(newState).not.toBe(initialState);
 expect(newState.get("counter")).toBe(1);
+```
+
+## Support computed props
+
+Computed props will be re-computed once state changed
+
+```js
+const { get, set, computed } = create({ counter: 0 });
+computed({
+  isOdd(state) {
+    return state.counter % 2 !== 0;
+  }
+});
+const increase = set(state => ({ counter: state.counter + 1 }));
+
+console.log(get().isOdd); // => false
+increase();
+console.log(get().isOdd); // => true
+```
+
+There are 2 computed prop types: In-memory and In-State (default). In order to define In-Memory computed prop, just add prefix @.
+Use computed('InMemoryComputedPropNameWithoutAtSign') to get In-Memory computed prop value
+
+```js
+const { get, set, computed } = create({ counter: 0 });
+computed({
+  "@isOdd"(state) {
+    return state.counter % 2 !== 0;
+  }
+});
+const increase = set(state => ({ counter: state.counter + 1 }));
+
+console.log(get().isOdd); // => undefined
+increase();
+console.log(computed("isOdd")); // => true
+```
+
+Computed prop can has many dependencies
+
+```js
+const { get, computed } = create({
+  page: 0,
+  pageSize: 10,
+  totalItems: 15
+});
+computed({
+  // define in-memory computed prop pageCount
+  // it has 2 dependencies: pageSize and totalItems
+  "#pageCount pageSize totalItems": (pageSize, totalItems) =>
+    Math.ceil(totalItems / pageSize),
+  "#canPrev page": (page, pageCount) => page > 0 && page < pageCount,
+  "#canNext page pageCount": (page, pageCount) => page < pageCount - 1,
+  "pagination pageCount canPrev canNext": (pageCount, canPrev, canNext) => ({
+    pageCount,
+    canPrev,
+    canNext
+  })
+});
+
+console.log(get().pagination); // => { pageCount: 2, canPrev: false, canNext: true }
 ```
